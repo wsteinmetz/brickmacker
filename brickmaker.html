@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parametrischer BrickMaker Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Three.js Core MUSS zwingend zuerst geladen werden -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Addons -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px;}
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.3); }
+
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #10b981; cursor: pointer; margin-top: -6px;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5); transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: rgba(255, 255, 255, 0.1); border-radius: 2px;
+        }
+        input[type=range]:focus { outline: none; }
+    </style>
+</head>
+<body class="bg-[#0b0f19] text-gray-200 font-sans overflow-hidden antialiased selection:bg-emerald-500/30">
+
+    <!-- 3D Canvas Background -->
+    <div id="canvas-container" class="absolute top-0 right-0 bottom-0 left-0 lg:right-[400px] bg-gradient-to-br from-[#0f172a] to-[#020617]"></div>
+
+    <!-- Infobox Overlay (Zentriert über dem sichtbaren Bereich) -->
+    <div class="absolute top-6 left-1/2 lg:left-[calc(50%-200px)] transform -translate-x-1/2 bg-gray-900/60 backdrop-blur-md border border-white/5 px-5 py-2 rounded-full text-xs text-gray-400 pointer-events-none shadow-xl z-0 tracking-wide whitespace-nowrap">
+        1-Finger: Drehen <span class="mx-2 text-gray-600">|</span> 2-Finger: Bewegen <span class="mx-2 text-gray-600">|</span> Scroll: Zoom
+    </div>
+
+    <!-- Mobile Menu Toggle -->
+    <button id="mobileMenuBtn" class="lg:hidden absolute bottom-6 left-6 z-50 bg-emerald-600 p-4 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.4)] text-white hover:bg-emerald-500 transition-colors">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+    </button>
+
+    <!-- Sidebar (Glassmorphism - Rechtsbündig) -->
+    <aside id="sidebar" class="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-gray-900/80 backdrop-blur-2xl border-l border-gray-700/50 z-10 transform translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col shadow-[-20px_0_40px_rgba(0,0,0,0.5)]">
+        
+        <div class="p-8 flex-1 overflow-y-auto custom-scrollbar">
+            <!-- Header -->
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 tracking-tight">BrickMaker Pro</h1>
+                <p class="text-sm text-gray-400 mt-1 font-medium">Design & Export für 3D-Druck</p>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="flex flex-wrap gap-2 mb-8 bg-gray-950/50 p-1.5 rounded-xl border border-gray-800/50">
+                <button class="tab-btn active flex-1 px-3 py-2 text-xs font-bold rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.1)] transition-all" data-target="brick">Bausteine</button>
+                <button class="tab-btn flex-1 px-3 py-2 text-xs font-semibold rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-all border border-transparent" data-target="plate">Platten</button>
+                <button class="tab-btn flex-1 px-3 py-2 text-xs font-semibold rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-all border border-transparent" data-target="round">Rund</button>
+                <button class="tab-btn flex-1 px-3 py-2 text-xs font-semibold rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-all border border-transparent" data-target="hinge">Scharnier</button>
+            </div>
+
+            <div class="space-y-7">
+                <!-- DIMENSIONS (Brick) -->
+                <div id="dimBrick" class="space-y-4">
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Länge (Noppen)</label>
+                            <select id="colsInput" class="w-full bg-gray-900/50 border border-gray-700 text-gray-200 text-sm rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors shadow-inner">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4" selected>4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                                <option value="12">12</option>
+                            </select>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Breite (Noppen)</label>
+                            <select id="rowsInput" class="w-full bg-gray-900/50 border border-gray-700 text-gray-200 text-sm rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors shadow-inner">
+                                <option value="1">1</option>
+                                <option value="2" selected>2</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DIMENSIONS (Plate) -->
+                <div id="dimPlate" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Platten-Maße (mm)</label>
+                        <select id="plateDimInput" class="w-full bg-gray-900/50 border border-gray-700 text-gray-200 text-sm rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors shadow-inner">
+                            <option value="40x20">40 x 20 mm</option>
+                            <option value="40x40" selected>40 x 40 mm</option>
+                            <option value="60x20">60 x 20 mm</option>
+                            <option value="60x40">60 x 40 mm</option>
+                            <option value="60x60">60 x 60 mm</option>
+                            <option value="80x80">80 x 80 mm</option>
+                            <option value="100x100">100 x 100 mm</option>
+                            <option value="150x150">150 x 150 mm</option>
+                            <option value="200x200">200 x 200 mm</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- DIMENSIONS (Round) -->
+                <div id="dimRound" class="space-y-4 hidden">
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Durchmesser</label>
+                            <select id="roundDiaInput" class="w-full bg-gray-900/50 border border-gray-700 text-gray-200 text-sm rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors shadow-inner">
+                                <option value="1">1x1</option>
+                                <option value="2" selected>2x2</option>
+                                <option value="4">4x4</option>
+                                <option value="6">6x6</option>
+                                <option value="8">8x8</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DIMENSIONS (Hinge) -->
+                <div id="dimHinge" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Scharnier-Typ (2x1)</label>
+                        <select id="hingeTypeInput" class="w-full bg-gray-900/50 border border-gray-700 text-gray-200 text-sm rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors shadow-inner">
+                            <option value="1">1 Zinke (Zunge)</option>
+                            <option value="2" selected>2 Zinken (Gabel)</option>
+                        </select>
+                    </div>
+                    <div class="p-3.5 bg-blue-900/20 border border-blue-500/20 rounded-lg text-xs text-blue-300 leading-relaxed shadow-inner">
+                        <span class="font-bold text-blue-400 block mb-1">Maker-Tipp:</span> 
+                        Das Loch misst 1.9 mm. Nutze ein Stück 1.75mm Filament als unzerstörbaren Scharnier-Stift!
+                    </div>
+                </div>
+
+                <!-- HEIGHT -->
+                <div id="heightSetting" class="space-y-4">
+                    <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Steinhöhe</label>
+                    <select id="heightInput" class="w-full bg-gray-900/50 border border-gray-700 text-gray-200 text-sm rounded-lg p-2.5 outline-none focus:border-emerald-500 transition-colors shadow-inner">
+                        <option value="3.2">Platte (3.2 mm)</option>
+                        <option value="9.6" selected>Standard (9.6 mm)</option>
+                        <option value="19.2">Doppelt (19.2 mm)</option>
+                    </select>
+                </div>
+
+                <div class="h-px bg-gray-800/80 w-full"></div>
+
+                <!-- TOLERANCE SLIDER -->
+                <div class="bg-gray-950/30 p-4 rounded-xl border border-gray-800/50 shadow-inner">
+                    <div class="flex justify-between mb-3">
+                        <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Toleranz (Friction Fit)</label>
+                        <span id="tolVal" class="text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">0.15 mm</span>
+                    </div>
+                    <input type="range" id="toleranceInput" min="0.0" max="0.4" step="0.05" value="0.15">
+                </div>
+
+                <!-- CORNER RADIUS SLIDER -->
+                <div class="bg-gray-950/30 p-4 rounded-xl border border-gray-800/50 shadow-inner">
+                    <div class="flex justify-between mb-3">
+                        <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Eckenradius (Fillet)</label>
+                        <span id="radiusVal" class="text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">0.2 mm</span>
+                    </div>
+                    <input type="range" id="radiusInput" min="0.0" max="0.8" step="0.1" value="0.2">
+                </div>
+
+                <!-- COLOR -->
+                <div>
+                    <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Farbe</label>
+                    <div class="flex gap-3 items-center bg-gray-900/50 p-2 rounded-lg border border-gray-700 shadow-inner">
+                        <input type="color" id="colorInput" value="#3b82f6" class="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0">
+                        <span id="colorHex" class="text-sm font-mono text-gray-400 uppercase">#3B82F6</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EXPORT BUTTONS -->
+            <div class="mt-10 space-y-3">
+                <button id="downloadBtn" class="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 px-4 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    STL Exportieren
+                </button>
+                <button id="downloadScadBtn" class="w-full bg-gray-800/80 hover:bg-gray-700/80 border border-gray-600 hover:border-gray-500 text-gray-300 font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                    SCAD Datei Speichern
+                </button>
+            </div>
+
+            <!-- OpenSCAD Viewer -->
+            <div class="mt-8 mb-6">
+                <label class="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 flex justify-between items-center">
+                    Live OpenSCAD Code
+                    <button id="copyCodeBtn" class="text-gray-500 hover:text-white transition-colors" title="Code kopieren">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    </button>
+                </label>
+                <div class="relative group">
+                    <pre id="scadCode" class="text-[10px] text-blue-300 font-mono bg-[#050914] border border-gray-800 p-4 rounded-xl overflow-x-auto h-48 custom-scrollbar shadow-inner"></pre>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <script>
+        // Constants
+        const PITCH = 8.0;
+        const WALL = 1.2;
+        const STUD_D = 4.8;
+        const STUD_H = 1.7;
+
+        const state = {
+            mode: 'brick', 
+            cols: 4, 
+            rows: 2, 
+            height: 9.6,
+            plateDim: '40x40',
+            roundDia: 2, 
+            hingeType: '2',
+            tolerance: 0.15,
+            cornerRadius: 0.2,
+            color: '#3b82f6'
+        };
+
+        const els = {
+            tabs: document.querySelectorAll('.tab-btn'),
+            dimBrick: document.getElementById('dimBrick'),
+            dimPlate: document.getElementById('dimPlate'),
+            dimRound: document.getElementById('dimRound'),
+            dimHinge: document.getElementById('dimHinge'),
+            heightSetting: document.getElementById('heightSetting'),
+            
+            colsInput: document.getElementById('colsInput'),
+            rowsInput: document.getElementById('rowsInput'),
+            plateDimInput: document.getElementById('plateDimInput'),
+            roundDiaInput: document.getElementById('roundDiaInput'),
+            hingeTypeInput: document.getElementById('hingeTypeInput'),
+            heightInput: document.getElementById('heightInput'),
+            
+            toleranceInput: document.getElementById('toleranceInput'),
+            tolVal: document.getElementById('tolVal'),
+            radiusInput: document.getElementById('radiusInput'),
+            radiusVal: document.getElementById('radiusVal'),
+            colorInput: document.getElementById('colorInput'),
+            colorHex: document.getElementById('colorHex'),
+            
+            scadCode: document.getElementById('scadCode'),
+            downloadBtn: document.getElementById('downloadBtn'),
+            downloadScadBtn: document.getElementById('downloadScadBtn'),
+            copyCodeBtn: document.getElementById('copyCodeBtn'),
+            
+            mobileMenuBtn: document.getElementById('mobileMenuBtn'),
+            sidebar: document.getElementById('sidebar')
+        };
+
+        let scene, camera, renderer, controls;
+        let brickGroup = new THREE.Group();
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(40, 35, 50);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 50, 20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+            
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            fillLight.position.set(-20, 10, -20);
+            scene.add(fillLight);
+
+            const gridHelper = new THREE.GridHelper(200, 40, 0x3b82f6, 0x1e293b);
+            gridHelper.position.y = -0.01;
+            gridHelper.material.opacity = 0.3;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+
+            scene.add(brickGroup);
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+            update3DModel();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function createRoundedRectShape(width, depth, radius) {
+            const shape = new THREE.Shape();
+            if (radius === 0) {
+                shape.moveTo(0, 0);
+                shape.lineTo(width, 0);
+                shape.lineTo(width, depth);
+                shape.lineTo(0, depth);
+                shape.lineTo(0, 0);
+            } else {
+                shape.moveTo(radius, 0);
+                shape.lineTo(width - radius, 0);
+                shape.quadraticCurveTo(width, 0, width, radius);
+                shape.lineTo(width, depth - radius);
+                shape.quadraticCurveTo(width, depth, width - radius, depth);
+                shape.lineTo(radius, depth);
+                shape.quadraticCurveTo(0, depth, 0, depth - radius);
+                shape.lineTo(0, radius);
+                shape.quadraticCurveTo(0, 0, radius, 0);
+            }
+            return shape;
+        }
+
+        function createChamferedCylinder(radius, height, chamfer) {
+            const points = [];
+            points.push(new THREE.Vector2(0, 0)); 
+            points.push(new THREE.Vector2(radius, 0)); 
+            points.push(new THREE.Vector2(radius, height - chamfer)); 
+            points.push(new THREE.Vector2(radius - chamfer, height)); 
+            points.push(new THREE.Vector2(0, height)); 
+            return new THREE.LatheGeometry(points, 32);
+        }
+
+        function update3DModel() {
+            while(brickGroup.children.length > 0){ 
+                const child = brickGroup.children[0];
+                brickGroup.remove(child); 
+                if(child.geometry) child.geometry.dispose();
+                if(child.material) child.material.dispose();
+            }
+
+            const material = new THREE.MeshStandardMaterial({ color: state.color, roughness: 0.3, metalness: 0.1 });
+            const r = state.cornerRadius;
+            const t = state.tolerance;
+
+            try {
+                if (state.mode === 'brick' || state.mode === 'hinge') {
+                    let c = state.mode === 'hinge' ? 2 : parseInt(state.cols);
+                    let rw = state.mode === 'hinge' ? 1 : parseInt(state.rows);
+                    let h = parseFloat(state.height);
+                    
+                    const length = c * PITCH - 0.2;
+                    const width = rw * PITCH - 0.2;
+
+                    const outerShape = createRoundedRectShape(length, width, r);
+                    const innerPath = new THREE.Path();
+                    
+                    // 1-reihige Steine: Triple-Grip Seitenwände (klemmen direkt an die 4.8mm Noppen)
+                    let wallX = WALL;
+                    let wallY = (rw === 1) ? (width - (4.8 + t)) / 2 : WALL;
+                    
+                    const iw = length - 2 * wallX;
+                    const id = width - 2 * wallY;
+                    const ir = Math.max(0, r - Math.min(wallX, wallY)/2);
+                    
+                    if (ir === 0) {
+                        innerPath.moveTo(wallX, wallY);
+                        innerPath.lineTo(wallX, wallY + id);
+                        innerPath.lineTo(wallX + iw, wallY + id);
+                        innerPath.lineTo(wallX + iw, wallY);
+                        innerPath.lineTo(wallX, wallY);
+                    } else {
+                        innerPath.moveTo(wallX + ir, wallY);
+                        innerPath.lineTo(wallX + iw - ir, wallY);
+                        innerPath.quadraticCurveTo(wallX + iw, wallY, wallX + iw, wallY + ir);
+                        innerPath.lineTo(wallX + iw, wallY + id - ir);
+                        innerPath.quadraticCurveTo(wallX + iw, wallY + id, wallX + iw - ir, wallY + id);
+                        innerPath.lineTo(wallX + ir, wallY + id);
+                        innerPath.quadraticCurveTo(wallX, wallY + id, wallX, wallY + id - ir);
+                        innerPath.lineTo(wallX, wallY + ir);
+                        innerPath.quadraticCurveTo(wallX, wallY, wallX + ir, wallY);
+                    }
+                    outerShape.holes.push(innerPath);
+
+                    const extrudeSettings = { depth: h - WALL, bevelEnabled: false, curveSegments: 32 };
+                    const shellGeo = new THREE.ExtrudeGeometry(outerShape, extrudeSettings);
+                    shellGeo.rotateX(Math.PI / 2);
+                    shellGeo.translate(0, h - WALL, 0);
+                    
+                    const shellMesh = new THREE.Mesh(shellGeo, material);
+                    shellMesh.castShadow = true;
+                    brickGroup.add(shellMesh);
+
+                    const roofGeo = new THREE.ExtrudeGeometry(createRoundedRectShape(length, width, r), { depth: WALL, bevelEnabled: false, curveSegments: 32});
+                    roofGeo.rotateX(Math.PI / 2);
+                    roofGeo.translate(0, h, 0);
+                    const roofMesh = new THREE.Mesh(roofGeo, material);
+                    roofMesh.castShadow = true;
+                    brickGroup.add(roofMesh);
+
+                    const studGeo = createChamferedCylinder(STUD_D/2, STUD_H, 0.1);
+                    for (let x = 0; x < c; x++) {
+                        for (let y = 0; y < rw; y++) {
+                            const studMesh = new THREE.Mesh(studGeo, material);
+                            studMesh.position.set((PITCH/2 - 0.1) + x * PITCH, h, (PITCH/2 - 0.1) + y * PITCH);
+                            studMesh.castShadow = true;
+                            brickGroup.add(studMesh);
+                        }
+                    }
+
+                    if (rw === 2 && c > 1) {
+                        for (let x = 0; x < c - 1; x++) {
+                            const tubeOD = 6.51;
+                            const tubeID = 4.8 + t; // Loch für 2-reihige Röhren (+ Toleranz)
+                            
+                            const ringShape = new THREE.Shape();
+                            ringShape.absarc(0, 0, tubeOD/2, 0, Math.PI*2, false);
+                            const ringHole = new THREE.Path();
+                            ringHole.absarc(0, 0, tubeID/2, 0, Math.PI*2, true);
+                            ringShape.holes.push(ringHole);
+                            
+                            const ringH = h - WALL - 0.6;
+                            const ringExtrude = { depth: ringH, bevelEnabled: false, curveSegments: 32 };
+                            const ringGeo = new THREE.ExtrudeGeometry(ringShape, ringExtrude);
+                            ringGeo.rotateX(Math.PI / 2);
+                            ringGeo.translate(0, ringH, 0);
+                            
+                            const ringMesh = new THREE.Mesh(ringGeo, material);
+                            ringMesh.position.set(PITCH + x * PITCH - 0.1, 0, PITCH - 0.1);
+                            brickGroup.add(ringMesh);
+                            
+                            const roofH = 0.6;
+                            const tubeRoofGeo = new THREE.CylinderGeometry(tubeOD/2, tubeOD/2, roofH, 32);
+                            tubeRoofGeo.translate(0, roofH/2, 0);
+                            const tubeRoofMesh = new THREE.Mesh(tubeRoofGeo, material);
+                            tubeRoofMesh.position.set(PITCH + x * PITCH - 0.1, ringH, PITCH - 0.1);
+                            brickGroup.add(tubeRoofMesh);
+                        }
+                    } else if (rw === 1 && c > 1) {
+                        for (let x = 0; x < c - 1; x++) {
+                            const pinOD = 3.7 - t; // Dicke Stege für einreihige Steine
+                            const pinID = 1.6; // Filament-Spannloch (Materialersparnis)
+                            
+                            const ringShape = new THREE.Shape();
+                            ringShape.absarc(0, 0, pinOD/2, 0, Math.PI*2, false);
+                            const ringHole = new THREE.Path();
+                            ringHole.absarc(0, 0, pinID/2, 0, Math.PI*2, true);
+                            ringShape.holes.push(ringHole);
+                            
+                            const ringH = h - WALL - 0.6;
+                            const ringExtrude = { depth: ringH, bevelEnabled: false, curveSegments: 24 };
+                            const ringGeo = new THREE.ExtrudeGeometry(ringShape, ringExtrude);
+                            ringGeo.rotateX(Math.PI / 2);
+                            ringGeo.translate(0, ringH, 0);
+                            
+                            const ringMesh = new THREE.Mesh(ringGeo, material);
+                            ringMesh.position.set(PITCH + x * PITCH - 0.1, 0, PITCH/2 - 0.1);
+                            brickGroup.add(ringMesh);
+                            
+                            const roofH = 0.6;
+                            const pinRoofGeo = new THREE.CylinderGeometry(pinOD/2, pinOD/2, roofH, 24);
+                            pinRoofGeo.translate(0, roofH/2, 0);
+                            const pinRoofMesh = new THREE.Mesh(pinRoofGeo, material);
+                            pinRoofMesh.position.set(PITCH + x * PITCH - 0.1, ringH, PITCH/2 - 0.1);
+                            brickGroup.add(pinRoofMesh);
+                        }
+                    }
+
+                    if (state.mode === 'hinge') {
+                        const numProngs = parseInt(state.hingeType);
+                        const cx = length / 2;
+                        
+                        function drawKnuckle(k_w, posX) {
+                            // 1. Zylinder (Knuckle) mit Loch
+                            const knShape = new THREE.Shape();
+                            knShape.absarc(0, 0, 3.5, 0, Math.PI*2, false);
+                            const knHole = new THREE.Path();
+                            knHole.absarc(0, 0, 1.9/2, 0, Math.PI*2, true);
+                            knShape.holes.push(knHole);
+                            
+                            const knGeom = new THREE.ExtrudeGeometry(knShape, {depth: k_w, bevelEnabled: false, curveSegments: 32});
+                            knGeom.rotateY(Math.PI / 2);
+                            // Setzt die Achse auf Z = width + 2.0 (Außerhalb der Ziegelwand)
+                            knGeom.translate(posX - k_w/2, h/2, width + 2.0);
+                            const knMesh = new THREE.Mesh(knGeom, material);
+                            brickGroup.add(knMesh);
+
+                            // 2. Verbindungs-Block zur Wand
+                            // Dieser Block darf nur bis an den Loch-Rand (Z = width + 1.05) gehen, um das Loch nicht zu füllen!
+                            const blockDepth = 2.05; 
+                            const blockGeo = new THREE.BoxGeometry(k_w, h, blockDepth);
+                            // Platziert von width - 1.0 (verschmolzen mit Wand) bis width + 1.05 (Lochrand)
+                            blockGeo.translate(0, h/2, width - 1.0 + blockDepth/2);
+                            const blockMesh = new THREE.Mesh(blockGeo, material);
+                            blockMesh.position.set(posX, 0, 0);
+                            brickGroup.add(blockMesh);
+                        }
+
+                        if (numProngs === 1) {
+                            drawKnuckle(3.0, cx);
+                        } else if (numProngs === 2) {
+                            drawKnuckle(2.8, cx - 3.0); 
+                            drawKnuckle(2.8, cx + 3.0);
+                        }
+                    }
+
+                    controls.target.set(length/2, h/2, width/2);
+
+                } else if (state.mode === 'round') {
+                    const dia = parseInt(state.roundDia);
+                    let h = parseFloat(state.height);
+                    const radius = (dia * PITCH - 0.2) / 2;
+                    
+                    const outerShape = new THREE.Shape();
+                    outerShape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+                    
+                    const innerPath = new THREE.Path();
+                    innerPath.absarc(0, 0, radius - WALL, 0, Math.PI * 2, true);
+                    outerShape.holes.push(innerPath);
+
+                    const extrudeSettings = { depth: h - WALL, bevelEnabled: false, curveSegments: 64 };
+                    const shellGeo = new THREE.ExtrudeGeometry(outerShape, extrudeSettings);
+                    shellGeo.rotateX(Math.PI / 2);
+                    shellGeo.translate(0, h - WALL, 0);
+                    
+                    const shellMesh = new THREE.Mesh(shellGeo, material);
+                    shellMesh.castShadow = true;
+                    brickGroup.add(shellMesh);
+
+                    const roofShape = new THREE.Shape();
+                    roofShape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+                    const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: WALL, bevelEnabled: false, curveSegments: 64 });
+                    roofGeo.rotateX(Math.PI / 2);
+                    roofGeo.translate(0, h, 0);
+                    const roofMesh = new THREE.Mesh(roofGeo, material);
+                    roofMesh.castShadow = true;
+                    brickGroup.add(roofMesh);
+
+                    const offset = -(dia * PITCH) / 2 + PITCH/2;
+                    const studGeo = createChamferedCylinder(STUD_D/2, STUD_H, 0.1);
+                    
+                    for (let x = 0; x < dia; x++) {
+                        for (let y = 0; y < dia; y++) {
+                            const px = offset + x * PITCH;
+                            const py = offset + y * PITCH;
+                            const dist = Math.sqrt(px*px + py*py);
+                            
+                            const maxDist = (dia <= 2) ? radius + 0.2 : radius;
+                            
+                            if (dist + 2.4 <= maxDist) {
+                                const studMesh = new THREE.Mesh(studGeo, material);
+                                studMesh.position.set(px, h, -py);
+                                studMesh.castShadow = true;
+                                brickGroup.add(studMesh);
+                            }
+                        }
+                    }
+
+                    if (dia >= 2) {
+                        for (let x = 0; x < dia - 1; x++) {
+                            for (let y = 0; y < dia - 1; y++) {
+                                const px = offset + PITCH/2 + x * PITCH;
+                                const py = offset + PITCH/2 + y * PITCH;
+                                const dist = Math.sqrt(px*px + py*py);
+                                
+                                if (dist + 3.25 <= radius) {
+                                    const tubeOD = 6.51;
+                                    const tubeID = 4.8 + t;
+                                    
+                                    const ringShape = new THREE.Shape();
+                                    ringShape.absarc(0, 0, tubeOD/2, 0, Math.PI*2, false);
+                                    const ringHole = new THREE.Path();
+                                    ringHole.absarc(0, 0, tubeID/2, 0, Math.PI*2, true);
+                                    ringShape.holes.push(ringHole);
+                                    
+                                    const ringH = h - WALL - 0.6;
+                                    const ringExtrude = { depth: ringH, bevelEnabled: false, curveSegments: 32 };
+                                    const ringGeo = new THREE.ExtrudeGeometry(ringShape, ringExtrude);
+                                    ringGeo.rotateX(Math.PI / 2);
+                                    ringGeo.translate(0, ringH, 0);
+                                    
+                                    const ringMesh = new THREE.Mesh(ringGeo, material);
+                                    ringMesh.position.set(px, 0, -py);
+                                    brickGroup.add(ringMesh);
+
+                                    const roofH = 0.6;
+                                    const tubeRoofGeo = new THREE.CylinderGeometry(tubeOD/2, tubeOD/2, roofH, 32);
+                                    tubeRoofGeo.translate(0, roofH/2, 0);
+                                    const tubeRoofMesh = new THREE.Mesh(tubeRoofGeo, material);
+                                    tubeRoofMesh.position.set(px, ringH, -py);
+                                    brickGroup.add(tubeRoofMesh);
+                                }
+                            }
+                        }
+                    }
+                    controls.target.set(0, h/2, 0);
+
+                } else if (state.mode === 'plate') {
+                    const dims = state.plateDim.split('x');
+                    const lengthX = parseFloat(dims[0]);
+                    const widthY = parseFloat(dims[1]);
+                    const h = parseFloat(state.height);
+                    
+                    const cols = Math.floor(lengthX / PITCH);
+                    const rows = Math.floor(widthY / PITCH);
+                    
+                    const p_length = cols * PITCH - 0.2;
+                    const p_width = rows * PITCH - 0.2;
+
+                    const roofThick = 1.6;
+                    
+                    const roofShape = createRoundedRectShape(p_length, p_width, r);
+                    const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: roofThick, bevelEnabled: false, curveSegments: 32});
+                    roofGeo.rotateX(Math.PI / 2);
+                    roofGeo.translate(0, h, 0);
+                    const roofMesh = new THREE.Mesh(roofGeo, material);
+                    roofMesh.castShadow = true;
+                    brickGroup.add(roofMesh);
+
+                    const studGeo = createChamferedCylinder(STUD_D/2, STUD_H, 0.1);
+                    for (let x = 0; x < cols; x++) {
+                        for (let y = 0; y < rows; y++) {
+                            const studMesh = new THREE.Mesh(studGeo, material);
+                            studMesh.position.set((PITCH/2 - 0.1) + x * PITCH, h, (PITCH/2 - 0.1) + y * PITCH);
+                            studMesh.castShadow = true;
+                            brickGroup.add(studMesh);
+                        }
+                    }
+
+                    const gridH = h - roofThick;
+                    if (gridH > 0) {
+                        for (let x = 1; x < cols; x++) {
+                            const vGeo = new THREE.BoxGeometry(WALL, gridH, p_width);
+                            vGeo.translate(0, gridH/2, p_width/2);
+                            const vMesh = new THREE.Mesh(vGeo, material);
+                            vMesh.position.set(x * PITCH - 0.1, 0, 0);
+                            brickGroup.add(vMesh);
+                        }
+                        for (let y = 1; y < rows; y++) {
+                            const hGeo = new THREE.BoxGeometry(p_length, gridH, WALL);
+                            hGeo.translate(p_length/2, gridH/2, 0);
+                            const hMesh = new THREE.Mesh(hGeo, material);
+                            hMesh.position.set(0, 0, y * PITCH - 0.1);
+                            brickGroup.add(hMesh);
+                        }
+                        const bwX = new THREE.BoxGeometry(WALL, gridH, p_width);
+                        bwX.translate(WALL/2, gridH/2, p_width/2);
+                        const mbwX1 = new THREE.Mesh(bwX, material);
+                        const mbwX2 = new THREE.Mesh(bwX, material);
+                        mbwX2.position.set(p_length - WALL, 0, 0);
+                        brickGroup.add(mbwX1, mbwX2);
+
+                        const bwY = new THREE.BoxGeometry(p_length, gridH, WALL);
+                        bwY.translate(p_length/2, gridH/2, WALL/2);
+                        const mbwY1 = new THREE.Mesh(bwY, material);
+                        const mbwY2 = new THREE.Mesh(bwY, material);
+                        mbwY2.position.set(0, 0, p_width - WALL);
+                        brickGroup.add(mbwY1, mbwY2);
+                    }
+                    controls.target.set(p_length/2, h/2, p_width/2);
+                }
+
+            } catch(e) {
+                console.error("Fehler bei der 3D-Generierung:", e);
+            }
+            generateSCADCode();
+        }
+
+        function generateSCADCode() {
+            let code = `// Parametrischer BrickMaker Pro - FDM Optimiert\n`;
+            code += `$fn = 64;\ntol = ${state.tolerance};\nr_corner = ${state.cornerRadius};\n`;
+            code += `pitch = 8.0;\nwall = 1.2;\nstud_d = 4.8;\nstud_h = 1.7;\nheight = ${state.height};\n\n`;
+
+            code += `module rounded_rect(l, w, h, r) {\n`;
+            code += `    if (r == 0) { cube([l, w, h]); } else {\n`;
+            code += `    hull() {\n`;
+            code += `        translate([r, r, 0]) cylinder(h=h, r=r);\n`;
+            code += `        translate([l-r, r, 0]) cylinder(h=h, r=r);\n`;
+            code += `        translate([r, w-r, 0]) cylinder(h=h, r=r);\n`;
+            code += `        translate([l-r, w-r, 0]) cylinder(h=h, r=r);\n`;
+            code += `    }}\n}\n\n`;
+
+            if (state.mode === 'brick' || state.mode === 'hinge') {
+                let c = state.mode === 'hinge' ? 2 : state.cols;
+                let rw = state.mode === 'hinge' ? 1 : state.rows;
+                code += `cols = ${c};\nrows = ${rw};\n`;
+                code += `l = cols * pitch - 0.2;\nw = rows * pitch - 0.2;\n\n`;
+                
+                if(state.mode === 'hinge') {
+                    code += `// Scharnier-Zinken (korrigiert)\n`;
+                    code += `module hinge_knuckle(kw) {\n`;
+                    code += `    translate([0, w + 2.0, height/2]) rotate([0, 90, 0]) difference() {\n`;
+                    code += `        union() {\n`;
+                    code += `            cylinder(h=kw, r=3.5, center=true);\n`;
+                    code += `            translate([0, -1.5, 0]) cube([height, 3.0, kw], center=true);\n`;
+                    code += `        }\n`;
+                    code += `        cylinder(h=kw+2, d=1.9, center=true); // Filament Pin Hole\n`;
+                    code += `    }\n}\n\n`;
+                }
+
+                code += `union() {\n`;
+                code += `    difference() {\n`;
+                code += `        union() {\n`;
+                code += `            rounded_rect(l, w, height, r_corner);\n`;
+                code += `            for(x=[0:cols-1]) for(y=[0:rows-1]) {\n`;
+                code += `                translate([pitch/2-0.1 + x*pitch, pitch/2-0.1 + y*pitch, height])\n`;
+                code += `                union() {\n`;
+                code += `                    cylinder(h=stud_h-0.1, d=stud_d);\n`;
+                code += `                    translate([0,0,stud_h-0.1]) cylinder(h=0.1, d1=stud_d, d2=stud_d-0.2);\n`;
+                code += `                }\n`;
+                code += `            }\n`;
+                code += `        }\n`;
+                code += `        // Aushöhlung Unterseite (1xN Steine greifen von der Seite)\n`;
+                code += `        if (rows == 1) {\n`;
+                code += `            translate([wall, (w - (4.8 + tol))/2, -1]) rounded_rect(l-2*wall, 4.8 + tol, height-wall+1, max(0, r_corner-wall/2));\n`;
+                code += `        } else {\n`;
+                code += `            translate([wall, wall, -1]) rounded_rect(l-2*wall, w-2*wall, height-wall+1, max(0, r_corner-wall/2));\n`;
+                code += `        }\n`;
+                code += `    }\n`;
+                
+                if (rw == 2 && c > 1) {
+                    code += `    // 2-reihig: Große Röhren für Klemmkraft über den Noppen\n`;
+                    code += `    for(x=[0:cols-2]) translate([pitch+x*pitch-0.1, pitch-0.1, 0]) difference() {\n`;
+                    code += `        cylinder(h=height-wall, d=6.51);\n`;
+                    code += `        translate([0,0,-1]) cylinder(h=height-wall-0.6+1, d=4.8+tol);\n`;
+                    code += `    }\n`;
+                } else if (rw == 1 && c > 1) {
+                    code += `    // 1-reihig: Dicke Stege klemmen zwischen die Noppen\n`;
+                    code += `    for(x=[0:cols-2]) translate([pitch+x*pitch-0.1, pitch/2-0.1, 0]) difference() {\n`;
+                    code += `        cylinder(h=height-wall, d=3.7-tol);\n`;
+                    code += `        translate([0,0,-1]) cylinder(h=height-wall-0.6+1, d=1.6);\n`;
+                    code += `    }\n`;
+                }
+                
+                if (state.mode === 'hinge') {
+                    let hType = parseInt(state.hingeType);
+                    code += `    cx = l/2;\n`;
+                    if (hType === 1) {
+                        code += `    translate([cx, 0, 0]) hinge_knuckle(3.0);\n`;
+                    } else if (hType === 2) {
+                        code += `    translate([cx-3.0, 0, 0]) hinge_knuckle(2.8);\n`;
+                        code += `    translate([cx+3.0, 0, 0]) hinge_knuckle(2.8);\n`;
+                    }
+                }
+                code += `}\n`;
+
+            } else if (state.mode === 'round') {
+                code += `dia = ${state.roundDia};\nrad = (dia * pitch - 0.2) / 2;\n\n`;
+                code += `union() {\n`;
+                code += `    difference() {\n`;
+                code += `        union() {\n`;
+                code += `            cylinder(h=height, r=rad);\n`;
+                code += `            off = -(dia*pitch)/2 + pitch/2;\n`;
+                code += `            for(x=[0:dia-1]) for(y=[0:dia-1]) {\n`;
+                code += `                px = off + x*pitch; py = off + y*pitch;\n`;
+                code += `                dist = sqrt(px*px + py*py);\n`;
+                code += `                if (dist + 2.4 <= (dia <= 2 ? rad + 0.2 : rad)) {\n`;
+                code += `                    translate([px, py, height]) union() {\n`;
+                code += `                        cylinder(h=stud_h-0.1, d=stud_d);\n`;
+                code += `                        translate([0,0,stud_h-0.1]) cylinder(h=0.1, d1=stud_d, d2=stud_d-0.2);\n`;
+                code += `                    }\n`;
+                code += `                }\n`;
+                code += `            }\n`;
+                code += `        }\n`;
+                code += `        translate([0,0,-1]) cylinder(h=height-wall+1, r=rad-wall);\n`;
+                code += `    }\n`;
+                code += `    if(dia >= 2) {\n`;
+                code += `        off = -(dia*pitch)/2 + pitch/2;\n`;
+                code += `        for(x=[0:dia-2]) for(y=[0:dia-2]) {\n`;
+                code += `            px = off + pitch/2 + x*pitch; py = off + pitch/2 + y*pitch;\n`;
+                code += `            if (sqrt(px*px + py*py) + 3.25 <= rad) {\n`;
+                code += `                translate([px, py, 0]) difference() {\n`;
+                code += `                    cylinder(h=height-wall, d=6.51);\n`;
+                code += `                    translate([0,0,-1]) cylinder(h=height-wall-0.6+1, d=4.8+tol);\n`;
+                code += `                }\n`;
+                code += `            }\n`;
+                code += `        }\n`;
+                code += `    }\n}\n`;
+
+            } else if (state.mode === 'plate') {
+                const dims = state.plateDim.split('x');
+                const lx = parseFloat(dims[0]);
+                const wy = parseFloat(dims[1]);
+                code += `lx = ${lx};\nwy = ${wy};\n`;
+                code += `cols = floor(lx / pitch);\nrows = floor(wy / pitch);\n`;
+                code += `l = cols * pitch - 0.2;\nw = rows * pitch - 0.2;\nroof = 1.6;\n\n`;
+                code += `union() {\n`;
+                code += `    translate([0, 0, height-roof]) rounded_rect(l, w, roof, r_corner);\n`;
+                code += `    for(x=[0:cols-1]) for(y=[0:rows-1]) {\n`;
+                code += `        translate([pitch/2-0.1 + x*pitch, pitch/2-0.1 + y*pitch, height])\n`;
+                code += `        union() {\n`;
+                code += `            cylinder(h=stud_h-0.1, d=stud_d);\n`;
+                code += `            translate([0,0,stud_h-0.1]) cylinder(h=0.1, d1=stud_d, d2=stud_d-0.2);\n`;
+                code += `        }\n`;
+                code += `    }\n`;
+                code += `    for(x=[1:cols-1]) translate([x*pitch-0.1 - wall/2, 0, 0]) cube([wall, w, height-roof]);\n`;
+                code += `    for(y=[1:rows-1]) translate([0, y*pitch-0.1 - wall/2, 0]) cube([l, wall, height-roof]);\n`;
+                code += `    cube([wall, w, height-roof]); translate([l-wall, 0, 0]) cube([wall, w, height-roof]);\n`;
+                code += `    cube([l, wall, height-roof]); translate([0, w-wall, 0]) cube([l, wall, height-roof]);\n`;
+                code += `}\n`;
+            }
+            els.scadCode.textContent = code;
+        }
+
+        els.tabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                els.tabs.forEach(t => {
+                    t.classList.remove('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/30', 'shadow-[0_0_10px_rgba(16,185,129,0.1)]');
+                    t.classList.add('text-gray-400', 'hover:text-white', 'hover:bg-gray-800', 'border-transparent');
+                });
+                const target = e.target;
+                target.classList.remove('text-gray-400', 'hover:text-white', 'hover:bg-gray-800', 'border-transparent');
+                target.classList.add('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/30', 'shadow-[0_0_10px_rgba(16,185,129,0.1)]');
+                
+                state.mode = target.dataset.target;
+                
+                els.dimBrick.classList.add('hidden');
+                els.dimPlate.classList.add('hidden');
+                els.dimRound.classList.add('hidden');
+                els.dimHinge.classList.add('hidden');
+                
+                if (state.mode === 'brick') els.dimBrick.classList.remove('hidden');
+                if (state.mode === 'plate') els.dimPlate.classList.remove('hidden');
+                if (state.mode === 'round') els.dimRound.classList.remove('hidden');
+                if (state.mode === 'hinge') els.dimHinge.classList.remove('hidden');
+
+                if (state.mode === 'plate') {
+                    els.heightInput.value = "3.2"; state.height = 3.2;
+                } else if (state.mode === 'hinge') {
+                    els.heightInput.value = "9.6"; state.height = 9.6;
+                }
+                update3DModel();
+            });
+        });
+
+        els.colsInput.addEventListener('change', (e) => { state.cols = e.target.value; update3DModel(); });
+        els.rowsInput.addEventListener('change', (e) => { state.rows = e.target.value; update3DModel(); });
+        els.plateDimInput.addEventListener('change', (e) => { state.plateDim = e.target.value; update3DModel(); });
+        els.roundDiaInput.addEventListener('change', (e) => { state.roundDia = e.target.value; update3DModel(); });
+        els.hingeTypeInput.addEventListener('change', (e) => { state.hingeType = e.target.value; update3DModel(); });
+        els.heightInput.addEventListener('change', (e) => { state.height = e.target.value; update3DModel(); });
+        
+        els.toleranceInput.addEventListener('input', (e) => {
+            state.tolerance = parseFloat(e.target.value);
+            els.tolVal.innerText = state.tolerance.toFixed(2) + " mm";
+            update3DModel();
+        });
+
+        els.radiusInput.addEventListener('input', (e) => {
+            state.cornerRadius = parseFloat(e.target.value);
+            els.radiusVal.innerText = state.cornerRadius.toFixed(1) + " mm";
+            update3DModel();
+        });
+
+        els.colorInput.addEventListener('input', (e) => {
+            state.color = e.target.value;
+            els.colorHex.innerText = state.color.toUpperCase();
+            update3DModel();
+        });
+
+        els.downloadBtn.addEventListener('click', () => {
+            const exporter = new THREE.STLExporter();
+            const stlString = exporter.parse(brickGroup);
+            const blob = new Blob([stlString], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `BrickMaker_${state.mode}_${state.mode === 'round' ? state.roundDia : (state.cols || '')}x${state.rows || ''}.stl`;
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+
+        els.downloadScadBtn.addEventListener('click', () => {
+            const scadString = els.scadCode.textContent;
+            const blob = new Blob([scadString], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `BrickMaker_${state.mode}_${state.mode === 'round' ? state.roundDia : (state.cols || '')}x${state.rows || ''}.scad`;
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+
+        els.copyCodeBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(els.scadCode.textContent).then(() => {
+                els.copyCodeBtn.innerHTML = `<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+                setTimeout(() => {
+                    els.copyCodeBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
+                }, 2000);
+            });
+        });
+
+        els.mobileMenuBtn.addEventListener('click', () => {
+            els.sidebar.classList.toggle('translate-x-full');
+        });
+
+        window.onload = initThreeJS;
+    </script>
+</body>
+</html>
